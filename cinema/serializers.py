@@ -1,3 +1,4 @@
+from django.db import transaction
 from rest_framework import serializers
 
 from cinema.models import (
@@ -67,7 +68,7 @@ class MovieSessionListSerializer(MovieSessionSerializer):
     cinema_hall_capacity = serializers.IntegerField(
         source="cinema_hall.capacity", read_only=True
     )
-    tickets_available = serializers.SerializerMethodField()
+    tickets_available = serializers.IntegerField(read_only=True)
 
     class Meta:
         model = MovieSession
@@ -79,10 +80,6 @@ class MovieSessionListSerializer(MovieSessionSerializer):
             "cinema_hall_capacity",
             "tickets_available",
         )
-
-    def get_tickets_available(self, obj):
-        taken = obj.tickets.count()
-        return obj.cinema_hall.capacity - taken
 
 
 class TicketsListSerializer(serializers.ModelSerializer):
@@ -138,7 +135,10 @@ class OrderCreateSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         tickets_data = validated_data.pop("tickets")
         user = self.context["request"].user
-        order = Order.objects.create(user=user, **validated_data)
-        for ticket_data in tickets_data:
-            Ticket.objects.create(order=order, **ticket_data)
+
+        with transaction.atomic():
+            order = Order.objects.create(user=user, **validated_data)
+            for ticket_data in tickets_data:
+                Ticket.objects.create(order=order, **ticket_data)
+
         return order
